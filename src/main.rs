@@ -3,8 +3,12 @@
 use std::collections::HashMap;
 use bevy::ecs::world;
 use bevy::{
+    color::palettes::css::*,
     input::mouse::MouseButtonInput, math::vec3, prelude::*, utils::HashSet,
     color::palettes::basic::*,
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    prelude::*,
+    window::PresentMode,
 };
 use noise::{NoiseFn, Perlin};
 use rand::Rng;
@@ -14,7 +18,7 @@ use rand_distr::{Normal, Distribution};
 
 //bevy ecs tilemap stuff
 use bevy::{color::palettes, math::Vec4Swizzles};
-use bevy::{ecs::system::Resource, prelude::*};
+use bevy::{ecs::system::Resource};
 
 mod tile_data;
 use tile_data::*;
@@ -42,6 +46,10 @@ const CAM_SPEED_MAX: f32 = 1500.;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest())) // prevents blurry sprites
+        .add_plugins((
+            FrameTimeDiagnosticsPlugin,
+        ))
+        .add_systems(Startup, init_msg_ui)
         .add_systems(Startup, setup) //Map loading/setup system
         .add_systems(FixedUpdate, animate_sprite) //Fixedupdate runs 60 FPS
         .add_systems(FixedUpdate, update_camera) //Camera control
@@ -364,6 +372,70 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
         }
     }
 }
+
+
+fn init_msg_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let font = asset_server.load("fonts/Starborn.ttf");
+    let font_size = 16.0;
+    let font_color = Color::WHITE;
+
+    let root_uinode = commands
+        .spawn(NodeBundle {
+            style: Style {
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                justify_content: JustifyContent::FlexStart,
+                flex_direction: FlexDirection::ColumnReverse,
+                ..default()
+            },
+            ..default()
+        })
+        .id();
+
+    let left_column = commands.spawn(NodeBundle {
+        style: Style {
+            flex_direction: FlexDirection::Column,
+            width: Val::Percent(40.),
+            height: Val::Percent(15.),
+            align_items: AlignItems::Start,
+            margin: UiRect::axes(Val::Px(15.), Val::Px(15.)),
+            padding: UiRect::axes(Val::Px(5.), Val::Px(5.)),
+            ..default()
+        },
+        border_radius: BorderRadius { top_left: (Val::Px(15.)), top_right: (Val::Px(15.)), bottom_left: (Val::Px(15.)), bottom_right: (Val::Px(15.))},
+        background_color: Color::srgba(0.02, 0.06, 0.23, 0.6).into(),
+        ..default()
+    }).with_children(|builder| {
+        builder.spawn(
+            TextBundle::from_section(
+                "You awaken on a strange island...",
+                TextStyle {
+                    font: font.clone(),
+                    font_size: font_size,
+                    color: font_color,
+                    ..default()
+                },
+            )
+        );
+        builder.spawn(
+            TextBundle::from_section(
+                "You are thirsty. Click some water to harvest it!",
+                TextStyle {
+                    font: font.clone(),
+                    font_size: font_size,
+                    color: font_color,
+                    ..default()
+                },
+            )
+        ); //can do multiple
+    }).id();
+
+    commands
+        .entity(root_uinode)
+        .push_children(&[left_column]);
+}
+
+
 
 fn mouse_input_handler(
     mut cursor_coords: ResMut<CursorWorldCoords>,
