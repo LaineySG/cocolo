@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use bevy::ecs::world;
+use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::{
     color::palettes::css::*,
     input::mouse::MouseButtonInput, math::vec3, prelude::*, utils::HashSet,
@@ -48,17 +49,15 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest())) // prevents blurry sprites
         .add_plugins(ScrollViewPlugin)
-        .add_plugins((
-            FrameTimeDiagnosticsPlugin,
-        ))
+        .add_plugins((FrameTimeDiagnosticsPlugin,))
         .add_systems(Startup, init_msg_ui)
         .add_systems(Startup, setup) //Map loading/setup system
-        .add_systems(FixedUpdate, animate_sprite) //Fixedupdate runs 60 FPS
         .add_systems(FixedUpdate, update_camera) //Camera control
         .add_systems(FixedUpdate, reload_on_r) //Reload map on 'r'
         .add_systems(FixedUpdate, mouse_input_handler) //mouse input handler
+        .add_systems(FixedUpdate, new_message)
         .init_resource::<CursorWorldCoords>()
-        //.add_plugins(PanCamPlugin) //Adds zoom and mouse-pan
+        .add_plugins(PanCamPlugin) //Adds zoom and mouse-pan
         .insert_resource(Msaa::Off) //Removes lines between assets
         .run();
 }
@@ -79,6 +78,13 @@ struct CursorWorldCoords(Vec2);
 struct CameraSpeed {
     speed: f32,
 }
+#[derive(Component)]
+struct UINode {
+    name: String,
+    id: Entity,
+}
+#[derive(Component)]
+struct Name(String);
 
 #[derive(Component, Deref, DerefMut)]
 struct AnimationTimer(Timer);
@@ -375,6 +381,57 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
     }
 }
 
+fn new_message(
+    mut scrolls_q: Query<&mut ScrollableContent>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    uinode_q: Query<&mut UINode>,
+) {
+    let font = asset_server.load("fonts/Starborn.ttf");
+    let font_size = 16.0;
+    let font_color = Color::WHITE;
+    
+    if keys.just_pressed(KeyCode::KeyF) {
+        let new_msg = commands.spawn((TextBundle::from_section(
+            "New message!",
+            TextStyle {
+                font: font.clone(),
+                font_size: font_size,
+                color: font_color,
+                ..default()
+            },
+        ),
+        )).id();
+        let msg_gap = commands.spawn(NodeBundle { //DIY line-gap
+                style: Style {
+                    height: Val::Px(4.),
+                    ..default()
+                },
+                ..default()
+            }).id();
+
+    let text_area = {
+        let mut res = None;
+        for ui_node in uinode_q.iter() {
+             if ui_node.name == "text_area".to_string() {res = Some(ui_node.id)};
+        }
+        res
+    };
+    let text_area = text_area.unwrap();
+        commands
+            .entity(text_area)
+            .push_children(&[new_msg])
+            .push_children(&[msg_gap]);
+
+
+    for mut scroll in scrolls_q.iter_mut() { //scroll down in textbox
+            scroll.pos_y -= 20.;
+            //println!("scroll pos: {}",scroll.pos_y);
+    }
+    
+    }
+}
 
 fn init_msg_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
     let font = asset_server.load("fonts/Starborn.ttf");
@@ -394,7 +451,8 @@ fn init_msg_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         })
         .id();
 
-    let left_column = commands.spawn((NodeBundle {
+    let mut text_area = root_uinode; //set up textarea here to keep it in scope. Assign rootnode to be overwritten later.
+    let text_box = commands.spawn((NodeBundle {
         style: Style {
             flex_direction: FlexDirection::Column,
             width: Val::Percent(40.),
@@ -409,8 +467,8 @@ fn init_msg_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
         ..default()
     },
     ScrollView::default(),
-)).with_children(|p| {
-    p.spawn((
+)).insert(Name("UIBox".to_string())).with_children(|p| {
+    text_area = p.spawn((
         NodeBundle {
             style: Style {
                 flex_direction: bevy::ui::FlexDirection::Column,
@@ -433,8 +491,15 @@ fn init_msg_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 },
             ),
         ));
+        scroll_area.spawn(NodeBundle { //DIY line-gap
+            style: Style {
+                height: Val::Px(4.),
+                ..default()
+            },
+            ..default()
+        });
         scroll_area.spawn((TextBundle::from_section(
-            "You are thirsty. Click some water to harvest it!",
+            "You don't know where you are.",
                 TextStyle {
                     font: font.clone(),
                     font_size: font_size,
@@ -443,8 +508,15 @@ fn init_msg_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 },
             ),
         ));
+        scroll_area.spawn(NodeBundle { //DIY line-gap
+            style: Style {
+                height: Val::Px(4.),
+                ..default()
+            },
+            ..default()
+        });
         scroll_area.spawn((TextBundle::from_section(
-            "You are thirsty. Click some water to harvest it!",
+            "You don't know where you came from.",
                 TextStyle {
                     font: font.clone(),
                     font_size: font_size,
@@ -453,8 +525,15 @@ fn init_msg_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 },
             ),
         ));
+        scroll_area.spawn(NodeBundle { //DIY line-gap
+            style: Style {
+                height: Val::Px(4.),
+                ..default()
+            },
+            ..default()
+        });
         scroll_area.spawn((TextBundle::from_section(
-            "You are thirsty. Click some water to harvest it!",
+            "You know just one thing. You are thirsty!",
                 TextStyle {
                     font: font.clone(),
                     font_size: font_size,
@@ -463,8 +542,15 @@ fn init_msg_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 },
             ),
         ));
+        scroll_area.spawn(NodeBundle { //DIY line-gap
+            style: Style {
+                height: Val::Px(4.),
+                ..default()
+            },
+            ..default()
+        });
         scroll_area.spawn((TextBundle::from_section(
-            "You are thirsty. Click some water to harvest it!",
+            "Try clicking some water to harvest it!",
                 TextStyle {
                     font: font.clone(),
                     font_size: font_size,
@@ -473,72 +559,22 @@ fn init_msg_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
                 },
             ),
         ));
-        scroll_area.spawn((TextBundle::from_section(
-            "You are thirsty. Click some water to harvest it!",
-                TextStyle {
-                    font: font.clone(),
-                    font_size: font_size,
-                    color: font_color,
-                    ..default()
-                },
-            ),
-        ));
-        scroll_area.spawn((TextBundle::from_section(
-            "You are thirsty. Click some water to harvest it!",
-                TextStyle {
-                    font: font.clone(),
-                    font_size: font_size,
-                    color: font_color,
-                    ..default()
-                },
-            ),
-        ));
-        scroll_area.spawn((TextBundle::from_section(
-            "You are thirsty. Click some water to harvest it!",
-                TextStyle {
-                    font: font.clone(),
-                    font_size: font_size,
-                    color: font_color,
-                    ..default()
-                },
-            ),
-        ));
-        scroll_area.spawn((TextBundle::from_section(
-            "You are thirsty. Click some water to harvest it!",
-                TextStyle {
-                    font: font.clone(),
-                    font_size: font_size,
-                    color: font_color,
-                    ..default()
-                },
-            ),
-        ));
-        scroll_area.spawn((TextBundle::from_section(
-            "You are thirsty. Click some water to harvest it!",
-                TextStyle {
-                    font: font.clone(),
-                    font_size: font_size,
-                    color: font_color,
-                    ..default()
-                },
-            ),
-        ));
-        scroll_area.spawn((TextBundle::from_section(
-            "You are thirsty. Click some water to harvest it! Last message.",
-                TextStyle {
-                    font: font.clone(),
-                    font_size: font_size,
-                    color: font_color,
-                    ..default()
-                },
-            ),
-        ));
-    });
+        scroll_area.spawn(NodeBundle { //DIY line-gap
+            style: Style {
+                height: Val::Px(4.),
+                ..default()
+            },
+            ..default()
+        });
+    }).id();
 }).id();
+commands.spawn(UINode {name: "root_uinode".to_string(), id:root_uinode}); //instantiate the root UInode
+commands.spawn(UINode {name: "text_box".to_string(), id:text_box}); //instantiate the root UInode
+commands.spawn(UINode {name: "text_area".to_string(), id:text_area}); //instantiate the root UInode
 
     commands
         .entity(root_uinode)
-        .push_children(&[left_column]);
+        .push_children(&[text_box]);
 }
 
 
@@ -547,8 +583,11 @@ fn mouse_input_handler(
     mut cursor_coords: ResMut<CursorWorldCoords>,
     tile_query: Query<&Tile>, 
     buttons: Res<ButtonInput<MouseButton>>,
+    mut evr_scroll: EventReader<MouseWheel>,
     windows_query: Query<&Window, With<PrimaryWindow>>,
     q_camera: Query<(&Camera, &GlobalTransform)>,
+    mut uinode_q: Query<(Entity, &Style), With<Name>>, //align_items
+    mut pancam: Query<&mut PanCam>,
 ) {
 
     // get the camera info and transform
@@ -558,10 +597,113 @@ fn mouse_input_handler(
     // There is only one primary window, so we can similarly get it from the query:
     let window = windows_query.single();
 
+    for _evt in evr_scroll.read() { //Check for scroll events
+        
+        if let Some(cursor_position) = window.cursor_position() {
+            for (_entity, style) in uinode_q.iter_mut() {
+                let ui_node_position = Vec2::new(
+                    match style.left {
+                        Val::Px(px) => px,
+                        Val::Percent(percent) => percent / 100.0 * window.size().x,
+                        _ => 0.0,
+                    },
+                    85. / 100. * window.size().y //Text box is 15% height, so it is 85% down the window.
+                );
     
+                let ui_node_size = Vec2::new(
+                    match style.width {
+                        Val::Px(px) => px,
+                        Val::Percent(percent) => percent / 100.0 * window.size().x,
+                        _ => 0.0,
+                    },
+                    match style.height {
+                        Val::Px(px) => px,
+                        Val::Percent(percent) => percent / 100.0 * window.size().y,
+                        _ => 0.0,
+                    },
+                );
+    
+                // Check if cursor is within UI node bounds
+                if cursor_position.x >= ui_node_position.x
+                    && cursor_position.x <= ui_node_position.x + ui_node_size.x
+                    && cursor_position.y >= ui_node_position.y
+                    && cursor_position.y <= ui_node_position.y + ui_node_size.y
+                {
+                    // If cursor overlaps with UI node, disable PanCam
+                    for mut cam in pancam.iter_mut() {
+                        cam.enabled = false;
+                        // println!("disabled: {},{},{},{}",ui_node_position.x,ui_node_position.x+ui_node_size.x,ui_node_position.y,ui_node_position.y+ui_node_size.y);
+                        // println!("cs_pos: {},{}",cursor_position.x,cursor_position.y);
+                    }
+                } else {
+                    // Re-enable PanCam if cursor is not over UI
+                    for mut cam in pancam.iter_mut() {
+                        cam.enabled = true;
+                        // println!("enabled: {},{},{},{}",ui_node_position.x,ui_node_position.x+ui_node_size.x,ui_node_position.y,ui_node_position.y+ui_node_size.y);
+                        // println!("cs_pos: {},{}",cursor_position.x,cursor_position.y);
+                    }
+                }
+            }
+        }
+    }
+    if buttons.just_pressed(MouseButton::Left) { //Same as above but for drag-scrolling
+        if let Some(cursor_position) = window.cursor_position() {
+
+            for (_entity, style) in uinode_q.iter_mut() {
+
+                let ui_node_position = Vec2::new(
+                    match style.left {
+                        Val::Px(px) => px,
+                        Val::Percent(percent) => percent / 100.0 * window.size().x,
+                        _ => 0.0,
+                    },
+                    85. / 100. * window.size().y //textbos is 15% of window size, so it's 85% down the screen since it's at the bottom.
+                );
+    
+                let ui_node_size = Vec2::new(
+                    match style.width {
+                        Val::Px(px) => px,
+                        Val::Percent(percent) => percent / 100.0 * window.size().x,
+                        _ => 0.0,
+                    },
+                    match style.height {
+                        Val::Px(px) => px,
+                        Val::Percent(percent) => percent / 100.0 * window.size().y,
+                        _ => 0.0,
+                    },
+                );
+    
+                // Check if cursor is within UI node bounds
+                if cursor_position.x >= ui_node_position.x
+                    && cursor_position.x <= ui_node_position.x + ui_node_size.x
+                    && cursor_position.y >= ui_node_position.y
+                    && cursor_position.y <= ui_node_position.y + ui_node_size.y
+                {
+                    // If cursor overlaps with UI node, disable PanCam
+                    for mut cam in pancam.iter_mut() {
+                        cam.enabled = false;
+                        // println!("disabled: {},{},{},{}",ui_node_position.x,ui_node_position.x+ui_node_size.x,ui_node_position.y,ui_node_position.y+ui_node_size.y);
+                        // println!("cs_pos: {},{}",cursor_position.x,cursor_position.y);
+                    }
+                } else {
+                    // Re-enable PanCam if cursor is not over UI
+                    for mut cam in pancam.iter_mut() {
+                        cam.enabled = true;
+                        // println!("enabled: {},{},{},{}",ui_node_position.x,ui_node_position.x+ui_node_size.x,ui_node_position.y,ui_node_position.y+ui_node_size.y);
+                        // println!("cs_pos: {},{}",cursor_position.x,cursor_position.y);
+                    }
+                }
+            }
+        }
+    }
+
+    for _ev in evr_scroll.read() {
+        println!("scrolling");
+    }
 
     if buttons.just_pressed(MouseButton::Left) {
 
+        
 
         // check if the cursor is inside the window and get its position
         // then, ask bevy to convert into world coordinates, and truncate to discard Z
@@ -647,24 +789,6 @@ fn update_camera( //Allows for movement-key control for the camera
         cam_speed.speed = CAM_SPEED_MAX;
     }
 }
-
-
-fn animate_sprite( //Currently not used but will probably use later
-    time: Res<Time>,
-    mut query: Query<(&AnimationIndices, &mut AnimationTimer, &mut TextureAtlas)>,
-) {
-    for (indices, mut timer, mut atlas) in &mut query {
-        timer.tick(time.delta());
-        if timer.just_finished() {
-            atlas.index = if atlas.index == indices.last {
-                indices.first
-            } else {
-                atlas.index + 1
-            };
-        }
-    }
-}
-
 
 fn grid_to_world(x:f32,y:f32) -> (f32,f32) { //Returns the new x,y coordinates as scaled based on sprite data
     (x * TILE_WIDTH as f32 * SPRITE_SCALE_FACTOR as f32, y * TILE_HEIGHT as f32 * SPRITE_SCALE_FACTOR as f32)
