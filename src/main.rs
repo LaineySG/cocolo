@@ -246,37 +246,24 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
 
             if resource_type == "outpost" {
                 let sales_mod_rand = rand::thread_rng().gen_range(0..=100);
-                resource_data.0 = match tile_base_type {
-                    v if (v == TileBaseType::Water || v == TileBaseType::DeepWater || v == TileBaseType::Pond || v == TileBaseType::River) => OutpostTile{ outpost_type: OutpostType::ShipOutpost, sales_mod: sales_mod_rand },
-                    v if (v == TileBaseType::DarkMountain || v == TileBaseType::Mountain) => OutpostTile{ outpost_type: OutpostType::MountainOutpost, sales_mod: sales_mod_rand },
-                    v if (v == TileBaseType::Forest || v == TileBaseType::Sand || v == TileBaseType::Jungle || v == TileBaseType::DarkForest) => OutpostTile{ outpost_type: OutpostType::ForestOutpost, sales_mod: sales_mod_rand },
-                    _ => {OutpostTile{ outpost_type: OutpostType::Outpost, sales_mod: sales_mod_rand }}
-                };
+                resource_data.0 = OutpostTile{ outpost_type: OutpostType::get_rand(tile_base_type), sales_mod: sales_mod_rand };
             } else if  resource_type == "enemy" {
                 let amount_mod_rand = rand::thread_rng().gen_range(0..=100);
                 let health_mod_rand = rand::thread_rng().gen_range(0..=100);
                 let damage_mod_rand = rand::thread_rng().gen_range(0..=100);
-                resource_data.2 = match tile_base_type {
-                    v if (v == TileBaseType::Water || v == TileBaseType::DeepWater || v == TileBaseType::Pond || v == TileBaseType::River) => EnemyTile { enemy_type: EnemyTileType::PirateShip, yields: ([ResourceItemType::None,ResourceItemType::None,ResourceItemType::None,ResourceItemType::None,ResourceItemType::None]), amount_mod: amount_mod_rand, health: health_mod_rand, damage: damage_mod_rand },
-                    _ => EnemyTile { enemy_type: EnemyTileType::BeepleBillage, yields: ([ResourceItemType::None,ResourceItemType::None,ResourceItemType::None,ResourceItemType::None,ResourceItemType::None]), amount_mod: amount_mod_rand, health: health_mod_rand, damage: damage_mod_rand },
-                };
+                resource_data.2 = EnemyTile { enemy_type: EnemyTileType::get_rand(tile_base_type), yields: ([(ResourceItemType::get_rand(TileBaseType::All)),ResourceItemType::get_rand(TileBaseType::All),ResourceItemType::get_rand(TileBaseType::All),ResourceItemType::get_rand(TileBaseType::All),ResourceItemType::get_rand(TileBaseType::All)]), amount_mod: amount_mod_rand, health: health_mod_rand, damage: damage_mod_rand }
+                
             } else if resource_type == "harvest" {
-                //let amount_mod_rand = rand::thread_rng().gen_range(0..=100);
-                let rand_item: ResourceItemType = rand::random();
+                let rand_item: ResourceItemType = ResourceItemType::get_rand(tile_base_type);
                 let rand_item_type = match rand_item {
-                    ResourceItemType::Nut(_) => ResourceItemType::Nut(rand::random::<NutType>()),
-                    ResourceItemType::Fruit(_) => ResourceItemType::Fruit(rand::random::<FruitType>()),
-                    ResourceItemType::Bush(_) => ResourceItemType::Bush(rand::random::<BushType>()),
-                    ResourceItemType::Spice(_) => ResourceItemType::Spice(rand::random::<SpiceType>()),
-                    _ => ResourceItemType::Mine(rand::random::<MineType>()), //mine
+                    ResourceItemType::Nut(_) => ResourceItemType::Nut(NutType::get_rand(tile_base_type)),
+                    ResourceItemType::Fruit(_) => ResourceItemType::Fruit(FruitType::get_rand(tile_base_type)),
+                    ResourceItemType::Bush(_) => ResourceItemType::Bush(BushType::get_rand(tile_base_type)),
+                    ResourceItemType::Spice(_) => ResourceItemType::Spice(SpiceType::get_rand(tile_base_type)),
+                    _ => ResourceItemType::Mine(MineType::get_rand(tile_base_type)),
                 };
                 let rand_amount = rand::random();
-                if !(tile_base_type == TileBaseType::Water || tile_base_type == TileBaseType::DeepWater || tile_base_type == TileBaseType::Pond || 
-                    tile_base_type == TileBaseType::River) {
-                    resource_data.1 = HarvestableTile {yields: rand_item_type, amount_mod: rand_amount};
-                } else {
-                    resource_data.1 = HarvestableTile {yields: ResourceItemType::Spice(SpiceType::Seamint), amount_mod: rand_amount};
-                }
+                resource_data.1 = HarvestableTile {yields: rand_item_type, amount_mod: rand_amount};
                 
             };
             // Insert into the tiles collection as a point and a tile type enum
@@ -305,6 +292,7 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
             TileBaseType::DeepWater => {30 + *clamp(&tile_randomizer, &0, &1) as usize},
             TileBaseType::River => {32 + *clamp(&tile_randomizer, &0, &1) as usize},
             TileBaseType::Pond => {34 + *clamp(&tile_randomizer, &0, &1) as usize},
+            _ => {210}, //shouldn't happen ever since all is only used internally
         };
 
         let resource_index = if outpost_data.outpost_type != OutpostType::None {
@@ -324,6 +312,7 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
                 ResourceItemType::Nut(_) => {120 + rand::thread_rng().gen_range(0..=2)},
                 ResourceItemType::Bush(_) => {132 + rand::thread_rng().gen_range(0..=8)},
                 ResourceItemType::Fruit(_) => {108 + rand::thread_rng().gen_range(0..=11)},
+                ResourceItemType::Spice(SpiceType::Seamint) => 149, //seamint has a unique icon
                 ResourceItemType::Spice(_) => {144 + rand::thread_rng().gen_range(0..=4)},
                 _ => {96 + rand::thread_rng().gen_range(0..=4)}, //Mine
             };
@@ -718,7 +707,8 @@ fn mouse_input_handler(
                     world_position.y > tile.location.1 - 24. && world_position.y < (tile.location.1 + TILE_HEIGHT as f32 * 3.) {
                     
                     println!("\n->cursor coords: {}/{}", world_position.x, world_position.y);
-                    println!("Tile base type: {:?}\nTile resources:{:?},{:?},{:?}\nTile location: {},{}", tile.base_type,tile.enemy.enemy_type,tile.harvest.yields,tile.outpost.outpost_type, tile.location.0, tile.location.1);
+                    //println!("Tile base type: {:?}\nTile resources:{:?},{:?},{:?}\nTile location: {},{}", tile.base_type,tile.enemy.enemy_type,tile.harvest.yields,tile.outpost.outpost_type, tile.location.0, tile.location.1);
+                    println!("Tile data: {:#?}", tile); //pretty print
                 }
             }
         };
