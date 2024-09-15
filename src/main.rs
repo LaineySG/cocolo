@@ -12,6 +12,7 @@ use bevy::{
     window::PresentMode,
 };
 use noise::{NoiseFn, Perlin};
+use rand::seq::SliceRandom;
 use rand::Rng;
 use bevy::window::PrimaryWindow;
 use bevy_pancam::{PanCamPlugin, PanCam};
@@ -25,24 +26,50 @@ use bevy::{ecs::system::Resource};
 mod tile_data;
 use tile_data::*;
 
+//bevy egui
+use bevy_egui::{egui, EguiContexts, EguiPlugin};
+
+
 
 //          CONSTANTS
 
-//Spritesheet
-const TERRAIN_SHEET_PATH: &str = "map.png";
+///sprite sheet image path.
+const SPRITE_SHEET_PATH: &str = "map.png";
+///Pixel width of a tile in the spritesheet.
 const TILE_WIDTH: usize = 8;
+///Pixel height of a tile in the spritesheet.
 const TILE_HEIGHT: usize = 8;
+///Sprite scale factor for a tile in the spritesheet, converted to the worldmap.
 const SPRITE_SCALE_FACTOR: usize = 6;
+///Number of columns on the spritesheet.
+const MAP_COLS: u32 = 12;
+///Number of rows on the spritesheet.
+const MAP_ROWS: u32 = 24;
 
-//Map
+///Map grid number of columns.
 pub const GRID_COLS:usize = 500;
+///Map grid number of rows.
 pub const GRID_ROWS:usize = 500;
+///Map grid perlin noise scale.
 const PERLIN_NOISE_SCALE: f64 = 65.; //was 10
 
-//Camera
+///Camera lerp smoothing factor.
 const CAM_LERP_FACTOR: f32 = 4.0;
+///Camera minimum speed from arrowkeys.
 const CAM_SPEED_MIN: f32 = 300.;
+///Camera maximum speed from arrowkeys.
 const CAM_SPEED_MAX: f32 = 1500.;
+
+///Standard font
+const TEXT_FONT:&str = "fonts/Starborn.ttf";
+///Standard text size
+const TEXT_SIZE_STANDARD:f32 = 16.;
+///Standard text color
+const TEXT_COLOR_STANDARD:Color = Color::WHITE;
+///Highlight text size
+const TEXT_SIZE_HIGHLIGHT:f32 = 20.;
+///Highlight text color
+const TEXT_COLOR_HIGHLIGHT:Color = Color::srgba(0.82, 0.06, 0.23, 1.);
 
 
 fn main() {
@@ -53,72 +80,84 @@ fn main() {
         .add_systems(Startup, init_msg_ui)
         .add_systems(Startup, setup) //Map loading/setup system
         .add_systems(FixedUpdate, update_camera) //Camera control
-        .add_systems(FixedUpdate, reload_on_r) //Reload map on 'r'
         .add_systems(FixedUpdate, mouse_input_handler) //mouse input handler
-        .add_systems(FixedUpdate, new_message)
+        .add_systems(FixedUpdate,keyboard_handler)
+        .add_systems(FixedUpdate, gui_buttons)
         .init_resource::<CursorWorldCoords>()
         .add_plugins(PanCamPlugin) //Adds zoom and mouse-pan
         .insert_resource(Msaa::Off) //Removes lines between assets
+
+        .add_plugins(EguiPlugin)
+
         .run();
 }
 
 //          COMPONENTS
 
-#[derive(Component)]
-struct AnimationIndices {
-    first: usize,
-    last: usize,
-}
-
-/// We will store the world position of the mouse cursor here.
+/// World coordinates of the mouse position
 #[derive(Resource, Default)]
 struct CursorWorldCoords(Vec2);
 
+/// Current speed of the camera.
 #[derive(Component)]
 struct CameraSpeed {
     speed: f32,
 }
+/// Player information storage.
 #[derive(Component)]
+struct PlayerStats {
+    gold: i32, //currency traded for with outposts
+    knowledge:i32, //research unlocked by hiring researchers to research ingredient tiles.
+    loonkas: Vec<Loonka>,
+}
+#[derive(Component)]
+///UI Node storage for comparisons.
 struct UINode {
     name: String,
     id: Entity,
 }
+///Name component for comparisons.
 #[derive(Component)]
 struct Name(String);
 
-#[derive(Component, Deref, DerefMut)]
-struct AnimationTimer(Timer);
 
-
-fn setup( //Sets up the map
+///Sets up the game and map.
+fn setup(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
 ) {
-    let texture: Handle<Image> = asset_server.load(TERRAIN_SHEET_PATH);
-
+    //create the map size, scale, and grid.
+    let texture: Handle<Image> = asset_server.load(SPRITE_SHEET_PATH);
     let layout = TextureAtlasLayout::from_grid(
-        UVec2::new(TILE_WIDTH as u32, TILE_HEIGHT as u32), 12, 16, None, None);
-
+        UVec2::new(TILE_WIDTH as u32, TILE_HEIGHT as u32), MAP_COLS, MAP_ROWS, None, None);
     let texture_atlas_layout = texture_atlas_layouts.add(layout);
 
-    commands.spawn(CameraSpeed {speed: CAM_SPEED_MIN}); //instantiate the cameraspeed structure with a default speed
-    
-    //let animation_indices = AnimationIndices { first: 1, last: 6 }; //Unused currently
+    //Spawns and instantiates camera and player information variables.
+    commands.spawn(CameraSpeed {speed: CAM_SPEED_MIN});
+    commands.spawn(PlayerStats {gold:0,knowledge:0,loonkas:vec![]});
     commands.spawn(Camera2dBundle::default()).insert(PanCam::default());
 
+    //Generate the map
     generate_new_map(commands, texture, texture_atlas_layout,None);
 }
 
-fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atlas_layout: Handle<TextureAtlasLayout>, query: Option<Query<Entity, With<TileBaseType>>>) { //Generate the map
-    //Generates perlin noise for the map
-    if let Some(query) = query {
+///Generates the map tiles, data, and resources.
+fn generate_new_map(
+    mut commands: Commands, 
+    texture: Handle<Image>, 
+    texture_atlas_layout: Handle<TextureAtlasLayout>, 
+    tiles_q: Option<Query<Entity, With<TileBaseType>>>)
+{
+    //despawn all tiles if they exist
+    if let Some(query) = tiles_q {
         for entity in query.iter() {
             commands.entity(entity).despawn();
         }
     }
 
     
+    //Generates set of perlin noises for the map
     let mut perlin_rand = rand::thread_rng();
     let base_perlin = Perlin::new(perlin_rand.gen());
     let forest_perlin = Perlin::new(perlin_rand.gen());
@@ -130,13 +169,13 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
     let islands_perlin = Perlin::new(perlin_rand.gen());
 
 
-    //Create tiles and use perlin noise to fill in the tilebasetype.
+    //Create base tiles and use perlin noise to fill in the tilebasetype.
     let mut tiles = HashSet::new();
     for x in 0..GRID_COLS {
         for y in 0..GRID_ROWS {
             let mut value = base_perlin.get([(x as f64 /PERLIN_NOISE_SCALE),(y as f64 / PERLIN_NOISE_SCALE)]);
             let tile_base_type = if value <= 0.10 {
-                let normalized_rand = Normal::new(0.0,0.02).unwrap(); //mean 0, std deviation 0.04
+                let normalized_rand = Normal::new(0.0,0.02).unwrap();
                 let normal_rng_val = normalized_rand.sample(&mut rand::thread_rng());
                 value = *clamp(&(value + (normal_rng_val) as f64), &0.00, &0.14);
 
@@ -145,7 +184,7 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
                         _ => TileBaseType::Water,
                     }
             } else {
-                let normalized_rand = Normal::new(0.0,0.05).unwrap(); //mean 0, std deviation 0.10
+                let normalized_rand = Normal::new(0.0,0.05).unwrap();
                 let normal_rng_val = normalized_rand.sample(&mut rand::thread_rng());
                 value = *clamp(&(value + (normal_rng_val) as f64), &0.00, &1.00);
     
@@ -159,7 +198,7 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
 
             //Generate forests
             let mut value = forest_perlin.get([(x as f64 /PERLIN_NOISE_SCALE),(y as f64 / PERLIN_NOISE_SCALE)]);
-            let normalized_rand = Normal::new(0.0,0.05).unwrap(); //mean 0, std deviation 0.10
+            let normalized_rand = Normal::new(0.0,0.05).unwrap();
             let normal_rng_val = normalized_rand.sample(&mut rand::thread_rng());
             value = *clamp(&(value + (normal_rng_val) as f64), &0.00, &1.00);
             let tile_base_type = match value {
@@ -169,7 +208,7 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
             
             //Generate dark forests
             let mut value = dark_forest_perlin.get([(x as f64 /PERLIN_NOISE_SCALE),(y as f64 / PERLIN_NOISE_SCALE)]);
-            let normalized_rand = Normal::new(0.0,0.05).unwrap(); //mean 0, std deviation 0.10
+            let normalized_rand = Normal::new(0.0,0.05).unwrap();
             let normal_rng_val = normalized_rand.sample(&mut rand::thread_rng());
             value = *clamp(&(value + (normal_rng_val) as f64), &0.00, &1.00);
             let tile_base_type = match value {
@@ -179,7 +218,7 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
             
             //Generate jungles
             let mut value = jungle_perlin.get([(x as f64 /PERLIN_NOISE_SCALE),(y as f64 / PERLIN_NOISE_SCALE)]);
-            let normalized_rand = Normal::new(0.0,0.05).unwrap(); //mean 0, std deviation 0.10
+            let normalized_rand = Normal::new(0.0,0.05).unwrap();
             let normal_rng_val = normalized_rand.sample(&mut rand::thread_rng());
             value = *clamp(&(value + (normal_rng_val) as f64), &0.00, &1.00);
             let tile_base_type = match value {
@@ -189,7 +228,7 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
             
             //Generate dirt
             let mut value = dirt_perlin.get([(x as f64 /PERLIN_NOISE_SCALE),(y as f64 / PERLIN_NOISE_SCALE)]);
-            let normalized_rand = Normal::new(0.0,0.05).unwrap(); //mean 0, std deviation 0.10
+            let normalized_rand = Normal::new(0.0,0.05).unwrap();
             let normal_rng_val = normalized_rand.sample(&mut rand::thread_rng());
             value = *clamp(&(value + (normal_rng_val) as f64), &0.00, &1.00);
             let tile_base_type = match value {
@@ -200,7 +239,7 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
             
             //Generate mud
             let mut value = mud_perlin.get([(x as f64 /PERLIN_NOISE_SCALE),(y as f64 / PERLIN_NOISE_SCALE)]);
-            let normalized_rand = Normal::new(0.0,0.05).unwrap(); //mean 0, std deviation 0.10
+            let normalized_rand = Normal::new(0.0,0.05).unwrap();
             let normal_rng_val = normalized_rand.sample(&mut rand::thread_rng());
             value = *clamp(&(value + (normal_rng_val) as f64), &0.00, &1.00);
             let tile_base_type = match value {
@@ -210,7 +249,7 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
 
             //Generate ponds
             let mut value = pond_perlin.get([(x as f64 /PERLIN_NOISE_SCALE),(y as f64 / PERLIN_NOISE_SCALE)]);
-            let normalized_rand = Normal::new(0.0,0.05).unwrap(); //mean 0, std deviation 0.10
+            let normalized_rand = Normal::new(0.0,0.05).unwrap();
             let normal_rng_val = normalized_rand.sample(&mut rand::thread_rng());
             value = *clamp(&(value + (normal_rng_val) as f64), &0.00, &1.00);
             let tile_base_type = match value {
@@ -271,7 +310,7 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
         }
     }
 
-    //Go through each tile, scale the grid locations to the world location using tile width and scale factor, then get the sprite based on the tilebasetype enum.
+    //Go through each tile, scale the grid locations to the world location using tile width and scale factor, then get the sprite based on the tilebasetype enum and draw it.
     for ((x,y), tile_base_type, outpost_data, harvest_data, enemy_data) in tiles.iter() {
         let (x, y) = grid_to_world(*x as f32, *y as f32);
 
@@ -295,6 +334,7 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
             _ => {210}, //shouldn't happen ever since all is only used internally
         };
 
+        //Gets the random tile type or color.
         let resource_index = if outpost_data.outpost_type != OutpostType::None {
             let tile_resource_type = outpost_data.outpost_type;
             let rand_colorval = rand::thread_rng().gen_range(0..=11); //0 to 11 inclusive
@@ -333,11 +373,11 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
         commands.spawn(( //Spawns the texture with the given texture index calculated previously
             SpriteBundle {
                 transform: Transform::from_scale(Vec3::splat(SPRITE_SCALE_FACTOR as f32)).with_translation(vec3(x as f32, y as f32, 0.0)),
-                texture: texture.clone(), //cloning is performance hit -- necessary?
+                texture: texture.clone(),
                 ..default()
             },
             TextureAtlas {
-                layout: texture_atlas_layout.clone(), //cloning is performance hit -- necessary?
+                layout: texture_atlas_layout.clone(),
                 index: texture_index,
             },
             Tile {
@@ -345,10 +385,9 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
                 base_type: *tile_base_type, 
                 outpost: *outpost_data,
                 harvest: *harvest_data,
-                enemy: *enemy_data ,
+                enemy: *enemy_data,
+                loonkas: vec![],
             },
-            // animation_indices,
-            // AnimationTimer(Timer::from_seconds(0.4, TimerMode::Repeating)),
         ));
 
         if resource_index < 191 { //if it has a valid resource
@@ -356,32 +395,119 @@ fn generate_new_map(mut commands: Commands, texture: Handle<Image>, texture_atla
             commands.spawn(( //Spawns the resource texture with the given resource index calculated previously
                 SpriteBundle {
                     transform: Transform::from_scale(Vec3::splat(SPRITE_SCALE_FACTOR as f32)).with_translation(vec3(x as f32, y as f32, 0.0)),
-                    texture: texture.clone(), //cloning is performance hit -- necessary?
+                    texture: texture.clone(),
                     ..default()
                 },
                 TextureAtlas {
-                    layout: texture_atlas_layout.clone(), //cloning is performance hit -- necessary?
+                    layout: texture_atlas_layout.clone(),
                     index: resource_index,
                 },
-                // animation_indices,
-                // AnimationTimer(Timer::from_seconds(0.4, TimerMode::Repeating)),
             ));
         }
     }
 }
 
+///Creates a new loonka for the player.
+fn create_loonka(
+    mut player_stat_q: Query<&mut PlayerStats>,
+) {
+    //get single player stat query
+    let Ok(mut player_stats) = player_stat_q.get_single_mut() else {return;};
+
+    let loonka_names = vec!["Toby".to_string(),"Richard".to_string(),"Raffielli".to_string(),"Mark".to_string(),"Reese".to_string(),"Alice".to_string(),
+    "Lisa".to_string(),"Tara".to_string(),"Primrose".to_string(),"Xantu".to_string(), "Patrick".to_string(), "Cody".to_string(), "Dani".to_string(), "Quinn".to_string(),
+    "Lainey".to_string(), "Chloe".to_string()];
+    
+    let currentid = player_stats.loonkas.len();
+    let name = loonka_names.choose(&mut rand::thread_rng()).unwrap().clone();
+    player_stats.loonkas.push(Loonka{
+        name: name,
+        id: currentid+1,
+        current_job: LoonkaJob::None,
+        vigor: rand::thread_rng().gen_range(25..=100),
+        speed: rand::thread_rng().gen_range(25..=100),
+        dexterity: rand::thread_rng().gen_range(25..=100),
+        strength: rand::thread_rng().gen_range(25..=100),
+        charisma: rand::thread_rng().gen_range(25..=100),
+        intellect: rand::thread_rng().gen_range(25..=100),
+        icon_num: rand::thread_rng().gen_range(0..=11),
+    });
+    // println!("loonkas: {:?}",player_stats.loonkas);
+}
+
+///Place a loonka (WIP)
+fn place_loonka(
+    mut commands: Commands, 
+    texture: Handle<Image>, 
+    texture_atlas_layout: Handle<TextureAtlasLayout>,
+    tile_q: Query<&Tile>, 
+    mut player_stat_q: Query<&mut PlayerStats>, 
+    mut clicked_tile: Tile) {
+
+    // let Ok(mut player_stats) = player_stats.get_single_mut() else {return;};
+
+
+
+    // //get texture index
+    
+    // commands.spawn(( //Spawns the texture with the given texture index calculated previously
+    //     SpriteBundle {
+    //         transform: Transform::from_scale(Vec3::splat(SPRITE_SCALE_FACTOR as f32)).with_translation(vec3(x as f32, y as f32, 0.0)),
+    //         texture: texture.clone(), //cloning is performance hit -- necessary?
+    //         ..default()
+    //     },
+    //     TextureAtlas {
+    //         layout: texture_atlas_layout.clone(), //cloning is performance hit -- necessary?
+    //         index: texture_index,
+    //     },
+    //     Tile {
+    //         location :(x,y), 
+    //         base_type: *tile_base_type, 
+    //         outpost: *outpost_data,
+    //         harvest: *harvest_data,
+    //         enemy: *enemy_data ,
+    //     },
+    //     // animation_indices,
+    //     // AnimationTimer(Timer::from_seconds(0.4, TimerMode::Repeating)),
+    // ));
+
+}
+
+///Handles keyboard input
+fn keyboard_handler(
+    commands:Commands,
+    keys: Res<ButtonInput<KeyCode>>, 
+    player_stat_q: Query<&mut PlayerStats>,
+    asset_server: Res<AssetServer>,
+    texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
+    tilebasetype_q: Query<Entity, With<TileBaseType>>,
+    uinode_q: Query<&mut UINode>,
+    scrolls_q: Query<&mut ScrollableContent>,
+    style_q: Query<&mut Style>,
+    contexts: EguiContexts,
+) {
+    if keys.just_pressed(KeyCode::KeyB) {
+        create_loonka(player_stat_q);
+    } else if keys.just_pressed(KeyCode::KeyR) {
+        reload_on_r(commands, asset_server, texture_atlas_layouts, tilebasetype_q)
+    } else if keys.just_pressed(KeyCode::KeyF) {
+        new_message(scrolls_q, commands, asset_server, uinode_q)
+    } else if keys.just_pressed(KeyCode::Tab) {
+        load_inventory(commands,asset_server,uinode_q,player_stat_q,style_q,None)
+    }
+}
+
+//Sends player a new message (WIP)
 fn new_message(
     mut scrolls_q: Query<&mut ScrollableContent>,
-    keys: Res<ButtonInput<KeyCode>>,
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     uinode_q: Query<&mut UINode>,
 ) {
-    let font = asset_server.load("fonts/Starborn.ttf");
-    let font_size = 16.0;
-    let font_color = Color::WHITE;
+    let font = asset_server.load(TEXT_FONT);
+    let font_size = TEXT_SIZE_STANDARD;
+    let font_color = TEXT_COLOR_STANDARD;
     
-    if keys.just_pressed(KeyCode::KeyF) {
         let new_msg = commands.spawn((TextBundle::from_section(
             "New message!",
             TextStyle {
@@ -419,13 +545,302 @@ fn new_message(
             //println!("scroll pos: {}",scroll.pos_y);
     }
     
+}
+
+///Loads the inventory, or reloads if reload is set to true.
+fn load_inventory(
+    mut commands: Commands, 
+    asset_server: Res<AssetServer>,
+    uinode_q: Query<&mut UINode>, 
+    player_stat_q: Query<&mut PlayerStats>,
+    mut style_q: Query<&mut Style>,
+    reload: Option<bool>,
+) {
+    let reload_bool = match reload {Some(val) => {val},None => {false}};
+
+    let inv_list_container = {
+        let mut res = None;
+        for ui_node in uinode_q.iter() {
+            if ui_node.name == "inv_list_container".to_string() {res = Some(ui_node.id)};
+        }
+        res
+    };
+    let inv_list_container = inv_list_container;
+        match inv_list_container {
+            Some(x) => {
+                if let Ok(style) = style_q.get_mut(inv_list_container.unwrap()) {
+                    if reload_bool {
+                        if style.display == Display::Block {
+                            commands.entity(x).insert(Style {
+                                display: Display::None,
+                                ..Default::default()
+                            });
+                            refresh_inventory(commands,asset_server,uinode_q,player_stat_q);
+                        }} else {
+                            if style.display == Display::Block {
+                                commands.entity(x).insert(Style {
+                                    display: Display::None,
+                                    ..Default::default()
+                                });
+                            } else {
+                                refresh_inventory(commands,asset_server,uinode_q,player_stat_q);
+                            }
+
+                        }
+                } else {
+                    refresh_inventory(commands,asset_server,uinode_q,player_stat_q);
+                }
+            },
+            None => {
+                refresh_inventory(commands,asset_server,uinode_q,player_stat_q);
+            }
+        }
+    
+}
+
+///Handles GUI button interactions.
+fn gui_buttons(
+    commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut interaction_q: Query<
+            (&Interaction,
+            &mut UiImage, &mut Loonka),
+        (Changed<Interaction>, With<Button>),
+    >,
+    uinode_q: Query<&mut UINode>,
+    mut player_stats_q: Query<&mut PlayerStats>,
+    style_q: Query<&mut Style>,
+) {    
+    let Ok(mut player_stats) = player_stats_q.get_single_mut() else {return;};
+
+    let mut old_job = LoonkaJob::None; 
+    let mut new_job_ex = LoonkaJob::None;
+
+    for (interaction, mut img, mut loonka) in &mut interaction_q {
+        match *interaction {
+            Interaction::Pressed => {
+                let mut idx = loonka.current_job as usize + 1; 
+                if idx > 7 {idx = 0}; //loop around if it's out of range.
+                if let Some(new_job) = LoonkaJob::from_index(idx) {
+                    *img = UiImage::new(asset_server.load(format!("ui/loonkas/{:?}.png", new_job)));
+                    old_job = loonka.current_job;
+                    loonka.current_job = new_job;
+                    new_job_ex = new_job;
+                    for playerloonka in player_stats.loonkas.iter_mut() {
+                        if playerloonka.id == loonka.id {
+                            playerloonka.current_job = new_job;
+                        }
+                    }
+                } else {
+                    println!("Invalid index for LoonkaJob: {}", idx);
+                }
+            }
+            Interaction::Hovered => {
+                    *img = UiImage::new(asset_server.load("ui/loonkas/Hover.png"));
+            }
+            Interaction::None => {
+                *img = UiImage::new(asset_server.load(format!("ui/loonkas/{:?}.png",loonka.current_job)));
+            }
+        }
+    }
+    if old_job != new_job_ex {
+        load_inventory(commands,asset_server,uinode_q,player_stats_q,style_q, Some(true));
     }
 }
 
-fn init_msg_ui(mut commands: Commands, asset_server: Res<AssetServer>) {
-    let font = asset_server.load("fonts/Starborn.ttf");
-    let font_size = 16.0;
-    let font_color = Color::WHITE;
+///Refreshes the inventory UI.
+fn refresh_inventory(
+    mut commands: Commands, 
+    asset_server: Res<AssetServer>,
+    uinode_q: Query<&mut UINode>,
+    mut player_stat_q: Query<&mut PlayerStats>,
+    ) {
+    
+    let font = asset_server.load(TEXT_FONT);
+    let font_size = TEXT_SIZE_STANDARD;
+    let font_color = TEXT_COLOR_STANDARD;
+    let highlight_font_size = TEXT_SIZE_HIGHLIGHT;
+    let highlight_font_color = TEXT_COLOR_HIGHLIGHT;
+
+    let Ok(player_stats) = player_stat_q.get_single_mut() else {return;};
+
+
+    let root_uinode = commands
+        .spawn(NodeBundle {
+            style: Style {
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                justify_content: JustifyContent::Center,
+                align_content: AlignContent::Center,
+                flex_direction: FlexDirection::Row,
+                align_items: AlignItems::Center,
+                ..default()
+            },
+            ..default()
+        })
+        .id();
+
+    let mut inv_base = root_uinode; //set up textarea here to keep it in scope. Assign rootnode to be overwritten later.
+    let inv_list_container = commands.spawn((NodeBundle {
+        style: Style {
+            flex_direction: FlexDirection::Column,
+            width: Val::Percent(80.),
+            display: Display::Block,
+            height: Val::Percent(60.),
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            align_content: AlignContent::Center,
+            margin: UiRect::axes(Val::Auto, Val::Px(15.)),
+            padding: UiRect::axes(Val::Px(5.), Val::Px(5.)),
+            ..default()
+        },
+        border_radius: BorderRadius { top_left: (Val::Px(15.)), top_right: (Val::Px(15.)), bottom_left: (Val::Px(15.)), bottom_right: (Val::Px(15.))},
+        background_color: Color::srgba(0.02, 0.06, 0.23, 0.8).into(),
+        ..default()
+    },
+    ScrollView::default(),
+    )).insert(Name("UIBox".to_string())).with_children(|p| {
+    inv_base = p.spawn((
+        NodeBundle {
+            style: Style {
+                flex_direction: bevy::ui::FlexDirection::Column,
+                width: Val::Percent(100.0),
+                padding: UiRect::axes(Val::Px(5.), Val::Px(5.)),
+                ..default()
+            },
+            transform: Transform::from_translation(vec3(0.0 as f32, 0.0 as f32, 0.0)),
+            ..default()
+        },
+        ScrollableContent::default(),
+    ))
+    .with_children(|scroll_area| {
+
+
+
+        for loonka in player_stats.loonkas.clone() {
+            
+            let mut _horizontal_row = scroll_area.spawn((
+                NodeBundle {
+                    style: Style {
+                        flex_direction: bevy::ui::FlexDirection::Row,
+                        width: Val::Percent(100.0),
+                        height: Val::Px(75.),
+                        align_items:AlignItems::Center,
+                        padding: UiRect::axes(Val::Px(5.), Val::Px(5.)),
+                        ..default()
+                    },
+                    transform: Transform::from_translation(vec3(0.0 as f32, 0.0 as f32, 0.0)),
+                    ..default()
+                },
+                ScrollableContent::default(),
+            )).with_children(|x| {
+
+                let mut _vertical_row = x.spawn((
+                NodeBundle {
+                    style: Style {
+                        flex_direction: bevy::ui::FlexDirection::Column,
+                        width: Val::Percent(100.0),
+                        height: Val::Px(75.),
+                        padding: UiRect::axes(Val::Px(5.), Val::Px(5.)),
+                        ..default()
+                    },
+                    transform: Transform::from_translation(vec3(0.0 as f32, 0.0 as f32, 0.0)),
+                    ..default()
+                },
+                ScrollableContent::default(),
+                )).with_children(|x| {
+                    x.spawn((TextBundle::from_section(
+                        format!("{}: {:?}",loonka.name, loonka.current_job),
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: highlight_font_size,
+                            color: highlight_font_color,
+                            ..default()
+                        },
+                    ),
+                ));
+
+
+                x.spawn(NodeBundle { //DIY line-gap
+                    style: Style {
+                        height: Val::Px(2.),
+                        margin: UiRect::axes(Val::Px(0.), Val::Px(4.)),
+                        ..default()
+                    },
+                    ..default()
+                });
+
+                    x.spawn((TextBundle::from_section(
+                        format!("Speed: {}, Charisma: {}, Strength: {}, Dexterity: {}, Intellect: {}, Vigor: {}",loonka.speed,loonka.charisma,
+                        loonka.strength,loonka.dexterity,loonka.intellect,loonka.vigor),
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: font_size,
+                            color: font_color,
+                            ..default()
+                        },
+                    ),
+                ));  
+                }
+
+                );
+                       
+
+            x.spawn((
+                ButtonBundle {
+                    style: Style {
+                        width: Val::Px(75.0),
+                        height: Val::Px(75.0),
+                        margin: UiRect::axes(Val::Px(15.), Val::Px(2.)),
+                        ..default()
+                    },
+                    image: UiImage::new(asset_server.load(format!("ui/loonkas/{:?}.png", loonka.current_job))),
+                    ..default()
+                },
+                loonka,
+            ));
+
+            });
+            
+            scroll_area.spawn(NodeBundle { //DIY line-gap
+                style: Style {
+                    height: Val::Px(2.),
+                    margin: UiRect::axes(Val::Px(0.), Val::Px(4.)),
+                    ..default()
+                },
+                background_color: Color::srgba(0.02, 0.06, 0.23, 0.8).into(),
+                ..default()
+            });
+           
+
+        }
+    }).id();
+    }).id();
+
+    commands.spawn(UINode {name: "inv_list_container".to_string(), id:inv_list_container}); //instantiate the root UInode
+    commands.spawn(UINode {name: "inv_base".to_string(), id:inv_base}); //instantiate the root UInode
+
+    let root_uinode = {
+        let mut res = None;
+        for ui_node in uinode_q.iter() {
+            if ui_node.name == "root_uinode".to_string() {res = Some(ui_node.id)};
+        }
+        res
+    };
+    let root_uinode = root_uinode.unwrap();
+    commands
+        .entity(root_uinode)
+        .push_children(&[inv_list_container]);
+}
+
+///Initiates the UI for the player message system.
+fn init_msg_ui(
+    mut commands: Commands, 
+    asset_server: Res<AssetServer>
+) {
+    let font = asset_server.load(TEXT_FONT);
+    let font_size = TEXT_SIZE_STANDARD;
+    let font_color = TEXT_COLOR_STANDARD;
 
     let root_uinode = commands
         .spawn(NodeBundle {
@@ -566,25 +981,24 @@ commands.spawn(UINode {name: "text_area".to_string(), id:text_area}); //instanti
         .push_children(&[text_box]);
 }
 
-
-
+///Handles mouse input.
 fn mouse_input_handler(
     mut cursor_coords: ResMut<CursorWorldCoords>,
-    tile_query: Query<&Tile>, 
+    tile_q: Query<&Tile>, 
     buttons: Res<ButtonInput<MouseButton>>,
     mut evr_scroll: EventReader<MouseWheel>,
-    windows_query: Query<&Window, With<PrimaryWindow>>,
-    q_camera: Query<(&Camera, &GlobalTransform)>,
+    windows_q: Query<&Window, With<PrimaryWindow>>,
+    camera_q: Query<(&Camera, &GlobalTransform)>,
     mut uinode_q: Query<(Entity, &Style), With<Name>>, //align_items
-    mut pancam: Query<&mut PanCam>,
+    mut pancam_q: Query<&mut PanCam>,
 ) {
 
     // get the camera info and transform
     // assuming there is exactly one main camera entity, so Query::single() is OK
-    let (camera, camera_transform) = q_camera.single();
+    let (camera, camera_transform) = camera_q.single();
 
     // There is only one primary window, so we can similarly get it from the query:
-    let window = windows_query.single();
+    let window = windows_q.single();
 
     for _evt in evr_scroll.read() { //Check for scroll events
         
@@ -619,14 +1033,14 @@ fn mouse_input_handler(
                     && cursor_position.y <= ui_node_position.y + ui_node_size.y
                 {
                     // If cursor overlaps with UI node, disable PanCam
-                    for mut cam in pancam.iter_mut() {
+                    for mut cam in pancam_q.iter_mut() {
                         cam.enabled = false;
                         // println!("disabled: {},{},{},{}",ui_node_position.x,ui_node_position.x+ui_node_size.x,ui_node_position.y,ui_node_position.y+ui_node_size.y);
                         // println!("cs_pos: {},{}",cursor_position.x,cursor_position.y);
                     }
                 } else {
                     // Re-enable PanCam if cursor is not over UI
-                    for mut cam in pancam.iter_mut() {
+                    for mut cam in pancam_q.iter_mut() {
                         cam.enabled = true;
                         // println!("enabled: {},{},{},{}",ui_node_position.x,ui_node_position.x+ui_node_size.x,ui_node_position.y,ui_node_position.y+ui_node_size.y);
                         // println!("cs_pos: {},{}",cursor_position.x,cursor_position.y);
@@ -669,14 +1083,14 @@ fn mouse_input_handler(
                     && cursor_position.y <= ui_node_position.y + ui_node_size.y
                 {
                     // If cursor overlaps with UI node, disable PanCam
-                    for mut cam in pancam.iter_mut() {
+                    for mut cam in pancam_q.iter_mut() {
                         cam.enabled = false;
                         // println!("disabled: {},{},{},{}",ui_node_position.x,ui_node_position.x+ui_node_size.x,ui_node_position.y,ui_node_position.y+ui_node_size.y);
                         // println!("cs_pos: {},{}",cursor_position.x,cursor_position.y);
                     }
                 } else {
                     // Re-enable PanCam if cursor is not over UI
-                    for mut cam in pancam.iter_mut() {
+                    for mut cam in pancam_q.iter_mut() {
                         cam.enabled = true;
                         // println!("enabled: {},{},{},{}",ui_node_position.x,ui_node_position.x+ui_node_size.x,ui_node_position.y,ui_node_position.y+ui_node_size.y);
                         // println!("cs_pos: {},{}",cursor_position.x,cursor_position.y);
@@ -686,9 +1100,6 @@ fn mouse_input_handler(
         }
     }
 
-    for _ev in evr_scroll.read() {
-        println!("scrolling");
-    }
 
     if buttons.just_pressed(MouseButton::Left) {
 
@@ -701,53 +1112,53 @@ fn mouse_input_handler(
         .map(|ray| ray.origin.truncate())
         {
             cursor_coords.0 = world_position;
-            for tile in tile_query.iter() {
+            for tile in tile_q.iter() {
                     //Shift value x by -24, -24 and value 2 (outer value) by +24, +24
                 if world_position.x > tile.location.0 - 24. && world_position.x < (tile.location.0 + TILE_WIDTH as f32 * 3.) && 
                     world_position.y > tile.location.1 - 24. && world_position.y < (tile.location.1 + TILE_HEIGHT as f32 * 3.) {
                     
-                    println!("\n->cursor coords: {}/{}", world_position.x, world_position.y);
-                    //println!("Tile base type: {:?}\nTile resources:{:?},{:?},{:?}\nTile location: {},{}", tile.base_type,tile.enemy.enemy_type,tile.harvest.yields,tile.outpost.outpost_type, tile.location.0, tile.location.1);
-                    println!("Tile data: {:#?}", tile); //pretty print
+                    //println!("\n->cursor coords: {}/{}", world_position.x, world_position.y);
+                    //println!("Tile data: {:#?}", tile); //pretty print
+                    if tile.harvest.yields != ResourceItemType::None {
+                        println!("Harvestable!");
+
+                    }
                 }
             }
         };
     }
 }
 
-
 fn reload_on_r( //Reload map textures on 'r' press
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut texture_atlas_layouts: ResMut<Assets<TextureAtlasLayout>>,
-    keys: Res<ButtonInput<KeyCode>>,
-    query: Query<Entity, With<TileBaseType>>,
+    tilebasetype_q: Query<Entity, With<TileBaseType>>,
 ) {
-    for entities in &query {
+    for entities in &tilebasetype_q {
         commands.entity(entities).despawn(); //despawn all entities
     };
-    let texture: Handle<Image> = asset_server.load(TERRAIN_SHEET_PATH);
+    let texture: Handle<Image> = asset_server.load(SPRITE_SHEET_PATH);
 
     let layout = TextureAtlasLayout::from_grid(
-        UVec2::new(TILE_WIDTH as u32, TILE_HEIGHT as u32), 12, 16, None, None);
+        UVec2::new(TILE_WIDTH as u32, TILE_HEIGHT as u32), MAP_COLS, MAP_ROWS, None, None);
 
     let texture_atlas_layout = texture_atlas_layouts.add(layout);
 
-    if keys.pressed(KeyCode::KeyR) {
-        generate_new_map(commands, texture, texture_atlas_layout, Some(query));
-    }
+    generate_new_map(commands, texture, texture_atlas_layout, Some(tilebasetype_q));
+    
 }
 
 fn update_camera( //Allows for movement-key control for the camera
-    mut camera: Query<&mut Transform, With<Camera2d>>,
-    mut query: Query<&mut CameraSpeed>,
+    mut camera_q: Query<&mut Transform, With<Camera2d>>,
+    mut cam_speed_q: Query<&mut CameraSpeed>,
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
 ) {
-    let Ok(mut camera) = camera.get_single_mut() else { //Make sure there's just 1 camera
+    let Ok(mut camera) = camera_q.get_single_mut() else { //Make sure there's just 1 camera
         return;
     };
-    let Ok(mut cam_speed) = query.get_single_mut() else {return;}; //And camera speed
+    let Ok(mut cam_speed) = cam_speed_q.get_single_mut() else {return;}; //And camera speed
 
     //let Vec3 { x, y, .. } = Vec3::new(0.0,0.0,0.0);
 
@@ -783,6 +1194,7 @@ fn update_camera( //Allows for movement-key control for the camera
 fn grid_to_world(x:f32,y:f32) -> (f32,f32) { //Returns the new x,y coordinates as scaled based on sprite data
     (x * TILE_WIDTH as f32 * SPRITE_SCALE_FACTOR as f32, y * TILE_HEIGHT as f32 * SPRITE_SCALE_FACTOR as f32)
 }
+
 fn clamp<'a, T: PartialOrd>(x: &'a T, min: &'a T, max: &'a T) -> &'a T { //Clamps a partially ordered value between a min and max value, inclusive.
     if x >= max {
         return max;
