@@ -1,6 +1,7 @@
 //          IMPORTS
 
 use std::collections::HashMap;
+use std::process::Command;
 use bevy::ecs::world;
 use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::{
@@ -70,7 +71,8 @@ const TEXT_COLOR_STANDARD:Color = Color::WHITE;
 const TEXT_SIZE_HIGHLIGHT:f32 = 20.;
 ///Highlight text color
 const TEXT_COLOR_HIGHLIGHT:Color = Color::srgba(0.82, 0.06, 0.23, 1.);
-
+///UI background color
+const BG_COLOR:Color = Color::srgba(0.02, 0.06, 0.23, 0.8);
 
 fn main() {
     App::new()
@@ -119,7 +121,6 @@ struct UINode {
 ///Name component for comparisons.
 #[derive(Component)]
 struct Name(String);
-
 
 ///Sets up the game and map.
 fn setup(
@@ -695,7 +696,7 @@ fn refresh_inventory(
             ..default()
         },
         border_radius: BorderRadius { top_left: (Val::Px(15.)), top_right: (Val::Px(15.)), bottom_left: (Val::Px(15.)), bottom_right: (Val::Px(15.))},
-        background_color: Color::srgba(0.02, 0.06, 0.23, 0.8).into(),
+        background_color: BG_COLOR.into(),
         ..default()
     },
     ScrollView::default(),
@@ -808,7 +809,7 @@ fn refresh_inventory(
                     margin: UiRect::axes(Val::Px(0.), Val::Px(4.)),
                     ..default()
                 },
-                background_color: Color::srgba(0.02, 0.06, 0.23, 0.8).into(),
+                background_color: BG_COLOR.into(),
                 ..default()
             });
            
@@ -867,7 +868,7 @@ fn init_msg_ui(
             ..default()
         },
         border_radius: BorderRadius { top_left: (Val::Px(15.)), top_right: (Val::Px(15.)), bottom_left: (Val::Px(15.)), bottom_right: (Val::Px(15.))},
-        background_color: Color::srgba(0.02, 0.06, 0.23, 0.6).into(),
+        background_color: BG_COLOR.into(),
         ..default()
     },
     ScrollView::default(),
@@ -983,14 +984,16 @@ commands.spawn(UINode {name: "text_area".to_string(), id:text_area}); //instanti
 
 ///Handles mouse input.
 fn mouse_input_handler(
+    mut commands: Commands,
     mut cursor_coords: ResMut<CursorWorldCoords>,
     tile_q: Query<&Tile>, 
-    buttons: Res<ButtonInput<MouseButton>>,
+    mouse_input: Res<ButtonInput<MouseButton>>,
     mut evr_scroll: EventReader<MouseWheel>,
     windows_q: Query<&Window, With<PrimaryWindow>>,
     camera_q: Query<(&Camera, &GlobalTransform)>,
-    mut uinode_q: Query<(Entity, &Style), With<Name>>, //align_items
+    mut named_entities_q: Query<(Entity, &Style, &Name), With<Name>>, //align_items
     mut pancam_q: Query<&mut PanCam>,
+    asset_server: Res<AssetServer>,
 ) {
 
     // get the camera info and transform
@@ -1000,10 +1003,10 @@ fn mouse_input_handler(
     // There is only one primary window, so we can similarly get it from the query:
     let window = windows_q.single();
 
-    for _evt in evr_scroll.read() { //Check for scroll events
+    for _evt in evr_scroll.read() { //Check for scroll events inside the chat box
         
         if let Some(cursor_position) = window.cursor_position() {
-            for (_entity, style) in uinode_q.iter_mut() {
+            for (_entity, style, _name) in named_entities_q.iter_mut() {
                 let ui_node_position = Vec2::new(
                     match style.left {
                         Val::Px(px) => px,
@@ -1049,10 +1052,11 @@ fn mouse_input_handler(
             }
         }
     }
-    if buttons.just_pressed(MouseButton::Left) { //Same as above but for drag-scrolling
+    
+    if mouse_input.just_pressed(MouseButton::Left) { //Same as above but for drag-scrolling
         if let Some(cursor_position) = window.cursor_position() {
 
-            for (_entity, style) in uinode_q.iter_mut() {
+            for (_entity, style,_name) in named_entities_q.iter_mut() {
 
                 let ui_node_position = Vec2::new(
                     match style.left {
@@ -1098,13 +1102,7 @@ fn mouse_input_handler(
                 }
             }
         }
-    }
-
-
-    if buttons.just_pressed(MouseButton::Left) {
-
         
-
         // check if the cursor is inside the window and get its position
         // then, ask bevy to convert into world coordinates, and truncate to discard Z
         if let Some(world_position) = window.cursor_position()
@@ -1126,8 +1124,96 @@ fn mouse_input_handler(
                 }
             }
         };
+
+        for (entity, _style,name) in named_entities_q.iter_mut() {
+            if name.0 == "context_menu" {
+                commands.entity(entity).despawn_recursive();
+            }
+        }
+
+    }
+
+    if mouse_input.just_pressed(MouseButton::Right) {
+        // check if the cursor is inside the window and get its position
+        // then, ask bevy to convert into world coordinates, and truncate to discard Z
+        let mut selected_tile: Option<&Tile> = None;
+        if let Some(world_position) = window.cursor_position()
+        .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor))
+        .map(|ray| ray.origin.truncate())
+        {
+            cursor_coords.0 = world_position;
+            for tile in tile_q.iter() {
+                    //Shift value x by -24, -24 and value 2 (outer value) by +24, +24
+                if world_position.x > tile.location.0 - 24. && world_position.x < (tile.location.0 + TILE_WIDTH as f32 * 3.) && 
+                    world_position.y > tile.location.1 - 24. && world_position.y < (tile.location.1 + TILE_HEIGHT as f32 * 3.) {
+                    selected_tile = Some(tile);
+                }
+            }
+        };
+
+        for (entity, _style,name) in named_entities_q.iter_mut() {
+            if name.0 == "context_menu" {
+                commands.entity(entity).despawn_recursive();
+            }
+        }
+        if let Some(tile) = selected_tile {
+            get_context_menu(commands,tile, window,asset_server);
+        };
+
     }
 }
+    
+fn get_context_menu (
+    mut commands: Commands,
+    tile: &Tile,
+    window: &Window,
+    asset_server: Res<AssetServer>,
+) {
+
+
+    let font = asset_server.load(TEXT_FONT);
+    let font_size = TEXT_SIZE_STANDARD;
+    let font_color = TEXT_COLOR_STANDARD;
+
+    if let Some(cursor_translate) = window.cursor_position() { //Context menu
+        let relative_position = (
+            (cursor_translate.y / window.height()).abs(),
+            (cursor_translate.x / window.width()).abs(),
+        );
+
+            commands.spawn((NodeBundle {
+                style: Style {
+                    position_type: PositionType::Absolute,
+                    top: Val::Percent(relative_position.0.abs() * 100.),
+                    left: Val::Percent(relative_position.1.abs() * 100.),
+    
+                    width: Val::Percent(15.0),
+                    height: Val::Percent(15.0),
+                    ..default()
+                },
+                background_color: BG_COLOR.into(),
+                ..default()
+            }, 
+            Name("context_menu".to_string()))
+        ).with_children( |menu| {
+
+
+                menu.spawn((TextBundle::from_section(
+                    format!("{:?}", tile.base_type),
+                    TextStyle {
+                        font: font.clone(),
+                        font_size: font_size,
+                        color: font_color,
+                        ..default()
+                    },
+                ),
+            ));
+            }
+            );
+        }
+}
+    
+
 
 fn reload_on_r( //Reload map textures on 'r' press
     mut commands: Commands,
