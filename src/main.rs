@@ -73,6 +73,8 @@ const TEXT_SIZE_HIGHLIGHT:f32 = 20.;
 const TEXT_COLOR_HIGHLIGHT:Color = Color::srgba(0.82, 0.06, 0.23, 1.);
 ///UI background color
 const BG_COLOR:Color = Color::srgba(0.02, 0.06, 0.23, 0.8);
+///UI background border color
+const BG_BORDER_COLOR:Color = Color::srgba(0.52, 0.56, 0.73, 0.5);
 
 fn main() {
     App::new()
@@ -80,6 +82,7 @@ fn main() {
         .add_plugins(ScrollViewPlugin)
         .add_plugins((FrameTimeDiagnosticsPlugin,))
         .add_systems(Startup, init_msg_ui)
+        .add_systems(Startup,init_build_ui)
         .add_systems(Startup, setup) //Map loading/setup system
         .add_systems(FixedUpdate, update_camera) //Camera control
         .add_systems(FixedUpdate, mouse_input_handler) //mouse input handler
@@ -113,6 +116,16 @@ struct PlayerStats {
     loonkas: Vec<Loonka>,
 }
 #[derive(Component)]
+struct BuildMenuState {
+    selected: Option<Name>,
+    cooler: bool, //true = place false = remove
+    heater: bool,
+    mixer: bool,
+    spinner: bool,
+    track: bool,
+    press: bool,
+}
+#[derive(Component)]
 ///UI Node storage for comparisons.
 struct UINode {
     name: String,
@@ -121,6 +134,8 @@ struct UINode {
 ///Name component for comparisons.
 #[derive(Component)]
 struct Name(String);
+#[derive(Component)]
+struct BuildMenuBtn;
 
 ///Sets up the game and map.
 fn setup(
@@ -137,6 +152,7 @@ fn setup(
     //Spawns and instantiates camera and player information variables.
     commands.spawn(CameraSpeed {speed: CAM_SPEED_MIN});
     commands.spawn(PlayerStats {gold:0,knowledge:0,loonkas:vec![]});
+    commands.spawn(BuildMenuState { selected: None, cooler: true, heater: true, mixer: true, spinner: true, track: true, press: true });
     commands.spawn(Camera2dBundle::default()).insert(PanCam::default());
 
     //Generate the map
@@ -603,21 +619,28 @@ fn load_inventory(
 fn gui_buttons(
     commands: Commands,
     asset_server: Res<AssetServer>,
-    mut interaction_q: Query<
+    mut interaction_loonkamenu_q: Query<
             (&Interaction,
             &mut UiImage, &mut Loonka),
-        (Changed<Interaction>, With<Button>),
+        (Changed<Interaction>, With<Button>, Without<BuildMenuBtn>),
+    >,
+    mut interaction_buildmenu_q: Query<
+            (&Interaction,
+            &mut UiImage, &Name),
+        (Changed<Interaction>, With<Button>, With<BuildMenuBtn>),
     >,
     uinode_q: Query<&mut UINode>,
     mut player_stats_q: Query<&mut PlayerStats>,
+    mut build_menu_q: Query<&mut BuildMenuState>,
     style_q: Query<&mut Style>,
 ) {    
     let Ok(mut player_stats) = player_stats_q.get_single_mut() else {return;};
+    let Ok(mut build_menu_state) = build_menu_q.get_single_mut() else {return;};
 
     let mut old_job = LoonkaJob::None; 
     let mut new_job_ex = LoonkaJob::None;
 
-    for (interaction, mut img, mut loonka) in &mut interaction_q {
+    for (interaction, mut img, mut loonka) in &mut interaction_loonkamenu_q {
         match *interaction {
             Interaction::Pressed => {
                 let mut idx = loonka.current_job as usize + 1; 
@@ -644,9 +667,75 @@ fn gui_buttons(
             }
         }
     }
+
+    //Build menu GUI interactions
+    for (interaction, mut img, name) in &mut interaction_buildmenu_q {
+        if *interaction == Interaction::Pressed {
+            build_menu_state.selected = Some(Name(name.0.clone()));
+            match name.0.as_str() {
+                "build_menu_cooler_button" => {
+                    if build_menu_state.cooler == true {
+                        build_menu_state.cooler = false;
+                        *img = UiImage::new(asset_server.load(format!("ui/remove_cooler.png")));
+                    } else {
+                        build_menu_state.cooler = true;
+                        *img = UiImage::new(asset_server.load(format!("ui/place_cooler.png")));
+                    };
+                },
+                "build_menu_heater_button" => {
+                    if build_menu_state.heater == true {
+                        build_menu_state.heater = false;
+                        *img = UiImage::new(asset_server.load(format!("ui/remove_heater.png")));
+                    } else {
+                        build_menu_state.heater = true;
+                        *img = UiImage::new(asset_server.load(format!("ui/place_heater.png")));
+                    };
+                },
+                "build_menu_mixer_button" => {
+                    if build_menu_state.mixer == true {
+                        build_menu_state.mixer = false;
+                        *img = UiImage::new(asset_server.load(format!("ui/remove_mixer.png")));
+                    } else {
+                        build_menu_state.mixer = true;
+                        *img = UiImage::new(asset_server.load(format!("ui/place_mixer.png")));
+                    };
+                },
+                "build_menu_spinner_button" => {
+                    if build_menu_state.spinner == true {
+                        build_menu_state.spinner = false;
+                        *img = UiImage::new(asset_server.load(format!("ui/remove_spinner.png")));
+                    } else {
+                        build_menu_state.spinner = true;
+                        *img = UiImage::new(asset_server.load(format!("ui/place_spinner.png")));
+                    };
+                },
+                "build_menu_track_button" => {
+                    if build_menu_state.track == true {
+                        build_menu_state.track = false;
+                        *img = UiImage::new(asset_server.load(format!("ui/remove_track.png")));
+                    } else {
+                        build_menu_state.track = true;
+                        *img = UiImage::new(asset_server.load(format!("ui/place_track.png")));
+                    };
+                },
+                "build_menu_press_button" => {
+                    if build_menu_state.press == true {
+                        build_menu_state.press = false;
+                        *img = UiImage::new(asset_server.load(format!("ui/remove_press.png")));
+                    } else {
+                        build_menu_state.press = true;
+                        *img = UiImage::new(asset_server.load(format!("ui/place_press.png")));
+                    };
+                },
+                _ => {}
+            }
+        }
+    }   
+    
     if old_job != new_job_ex {
         load_inventory(commands,asset_server,uinode_q,player_stats_q,style_q, Some(true));
     }
+
 }
 
 ///Refreshes the inventory UI.
@@ -991,7 +1080,7 @@ fn mouse_input_handler(
     mut evr_scroll: EventReader<MouseWheel>,
     windows_q: Query<&Window, With<PrimaryWindow>>,
     camera_q: Query<(&Camera, &GlobalTransform)>,
-    mut named_entities_q: Query<(Entity, &Style, &Name), With<Name>>, //align_items
+    mut named_entities_q: Query<(Entity, &Style, &Name), With<Name>>,
     mut pancam_q: Query<&mut PanCam>,
     asset_server: Res<AssetServer>,
 ) {
@@ -1162,8 +1251,172 @@ fn mouse_input_handler(
 
     }
 }
+
+
+fn init_build_ui(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    windows_q: Query<&Window, With<PrimaryWindow>>,
+) {
+    //let font = asset_server.load(TEXT_FONT);
+    let font_size = TEXT_SIZE_STANDARD;
+    let font_color = TEXT_COLOR_STANDARD;
+
+    let mut buttontext = Entity::PLACEHOLDER;
+    let mut buttonbundle = Entity::PLACEHOLDER;
+
+    // There is only one primary window, so we can similarly get it from the query:
+    let window = windows_q.single();
+    let root = commands.spawn((
+        NodeBundle {
+            style: Style {
+                // position_type: PositionType::Absolute,
+                // top: Val::Percent(window.height() * 0.90), //8% + padding
+                // left:  Val::Percent(window.width() * 0.50), //for the textbox
+                margin: UiRect::new(Val::Auto, Val::Px(0.), Val::Auto, Val::Auto),
+                width: Val::Percent(6.0),
+                display:Display::Flex,
+                height: Val::Percent(100.0),
+                flex_direction:FlexDirection::Column,
+                justify_content: JustifyContent::SpaceAround,
+                ..default()
+            },
+            background_color: BG_COLOR.into(),
+            //border_radius: BorderRadius { top_left: (Val::Px(15.)), top_right: (Val::Px(15.)), bottom_left: (Val::Px(15.)), bottom_right: (Val::Px(15.))},
+            ..default()
+        },
+        Name("build_menu".to_string())
+    )).id();
+    let build_menu_track_button = commands.spawn((
+        ButtonBundle {
+            style: Style {
+                width: Val::Percent(80.),
+                height: Val::Percent(8.),
+                margin: UiRect::new(Val::Px(8.), Val::Px(8.), Val::Px(8.), Val::Px(8.)),
+                display:Display::Flex,
+                ..default()
+            },
+            image: UiImage::new(asset_server.load(format!("ui/place_track.png"))),
+            ..default()
+        },
+        BuildMenuBtn,
+        Name("build_menu_track_button".to_string())
+    )).id();
+    let build_menu_cooler_button = commands.spawn((
+        ButtonBundle {
+            style: Style {
+                width: Val::Percent(80.),
+                height: Val::Percent(8.),
+                margin: UiRect::new(Val::Px(8.), Val::Px(8.), Val::Px(0.), Val::Px(8.)),
+                display:Display::Flex,
+                ..default()
+            },
+            image: UiImage::new(asset_server.load(format!("ui/place_cooler.png"))),
+            //border_radius: BorderRadius { top_left: (Val::Px(15.)), top_right: (Val::Px(15.)), bottom_left: (Val::Px(15.)), bottom_right: (Val::Px(15.))},
+            ..default()
+        },
+        BuildMenuBtn,
+        Name("build_menu_cooler_button".to_string())
+    )).id();
     
-fn get_context_menu (
+    let build_menu_heater_button = commands.spawn((
+        ButtonBundle {
+            style: Style {
+                width: Val::Percent(80.),
+                height: Val::Percent(8.),
+                margin: UiRect::new(Val::Px(8.), Val::Px(8.), Val::Px(0.), Val::Px(8.)),
+                display:Display::Flex,
+                ..default()
+            },
+            image: UiImage::new(asset_server.load(format!("ui/place_heater.png"))),
+            //border_radius: BorderRadius { top_left: (Val::Px(15.)), top_right: (Val::Px(15.)), bottom_left: (Val::Px(15.)), bottom_right: (Val::Px(15.))},
+            ..default()
+        },
+        BuildMenuBtn,
+        Name("build_menu_heater_button".to_string())
+    )).id();
+    
+    let build_menu_mixer_button = commands.spawn((
+        ButtonBundle {
+            style: Style {
+                width: Val::Percent(80.),
+                height: Val::Percent(8.),
+                margin: UiRect::new(Val::Px(8.), Val::Px(8.), Val::Px(0.), Val::Px(8.)),
+                display:Display::Flex,
+                ..default()
+            },
+            image: UiImage::new(asset_server.load(format!("ui/place_mixer.png"))),
+            //border_radius: BorderRadius { top_left: (Val::Px(15.)), top_right: (Val::Px(15.)), bottom_left: (Val::Px(15.)), bottom_right: (Val::Px(15.))},
+            ..default()
+        },
+        BuildMenuBtn,
+        Name("build_menu_mixer_button".to_string())
+    )).id();
+    
+    let build_menu_press_button = commands.spawn((
+        ButtonBundle {
+            style: Style {
+                width: Val::Percent(80.),
+                height: Val::Percent(8.),
+                margin: UiRect::new(Val::Px(8.), Val::Px(8.), Val::Px(0.), Val::Px(8.)),
+                display:Display::Flex,
+                ..default()
+            },
+            image: UiImage::new(asset_server.load(format!("ui/place_press.png"))),
+            //border_radius: BorderRadius { top_left: (Val::Px(15.)), top_right: (Val::Px(15.)), bottom_left: (Val::Px(15.)), bottom_right: (Val::Px(15.))},
+            ..default()
+        },
+        BuildMenuBtn,
+        Name("build_menu_press_button".to_string())
+    )).id();
+
+    let build_menu_spinner_button = commands.spawn((
+        ButtonBundle {
+            style: Style {
+                width: Val::Percent(80.),
+                height: Val::Percent(8.),
+                margin: UiRect::new(Val::Px(8.), Val::Px(8.), Val::Px(0.), Val::Px(8.)),
+                display:Display::Flex,
+                ..default()
+            },
+            image: UiImage::new(asset_server.load(format!("ui/place_spinner.png"))),
+            //border_radius: BorderRadius { top_left: (Val::Px(15.)), top_right: (Val::Px(15.)), bottom_left: (Val::Px(15.)), bottom_right: (Val::Px(15.))},
+            ..default()
+        },
+        BuildMenuBtn,
+        Name("build_menu_spinner_button".to_string())
+    )).id();
+    
+
+    commands
+        .entity(root)
+        .push_children(&[
+            build_menu_track_button,
+            build_menu_spinner_button,
+            build_menu_mixer_button,
+            build_menu_heater_button,
+            build_menu_cooler_button,
+            build_menu_press_button]);
+    //buttons:
+    //Remove all loonkas
+    //Remove all tracks
+    //Remove all 
+        
+    let selector = commands.spawn(ImageBundle{
+        style: Style{
+            width: Val::Percent(100.),
+            height: Val::Percent(100.),
+            ..default()
+        },
+        image: UiImage::new(asset_server.load(format!("ui/selected_button.png"))),
+        ..default()
+    }).id();
+    commands.entity(build_menu_track_button).push_children(&[selector]);
+
+}
+    
+
+fn get_context_menu(
     mut commands: Commands,
     tile: &Tile,
     window: &Window,
@@ -1180,41 +1433,121 @@ fn get_context_menu (
             (cursor_translate.y / window.height()).abs(),
             (cursor_translate.x / window.width()).abs(),
         );
+        let mut buttontext = Entity::PLACEHOLDER;
+        let mut buttonbundle = Entity::PLACEHOLDER;
 
-            commands.spawn((NodeBundle {
+        commands.spawn((
+            NodeBundle {
                 style: Style {
                     position_type: PositionType::Absolute,
                     top: Val::Percent(relative_position.0.abs() * 100.),
                     left: Val::Percent(relative_position.1.abs() * 100.),
-    
                     width: Val::Percent(15.0),
                     height: Val::Percent(15.0),
+                    flex_direction: FlexDirection::Column,
                     ..default()
                 },
                 background_color: BG_COLOR.into(),
+                border_radius: BorderRadius { top_left: (Val::Px(15.)), top_right: (Val::Px(15.)), bottom_left: (Val::Px(15.)), bottom_right: (Val::Px(15.))},
                 ..default()
-            }, 
-            Name("context_menu".to_string()))
-        ).with_children( |menu| {
-
-
-                menu.spawn((TextBundle::from_section(
-                    format!("{:?}", tile.base_type),
-                    TextStyle {
-                        font: font.clone(),
-                        font_size: font_size,
-                        color: font_color,
+            },
+            Name("context_menu".to_string())
+        ))
+        .with_children(|menu| {
+            buttonbundle = menu.spawn((
+                ButtonBundle {
+                    style: Style {
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(20.0),
+                        justify_content: JustifyContent::Center,
+                        border: UiRect { left: (Val::Px(2.)), right: (Val::Px(2.)), top: (Val::Px(2.)), bottom: (Val::Px(2.))},
+                        align_items: AlignItems::Center,
                         ..default()
                     },
-                ),
-            ));
-            }
-            );
-        }
+                    border_color: BG_BORDER_COLOR.into(),
+                    border_radius: BorderRadius { top_left: (Val::Px(15.)), top_right: (Val::Px(15.)), bottom_left: (Val::Px(0.)), bottom_right: (Val::Px(0.))},
+                    ..default()
+                },
+                Name("show_tile_info".to_string()),
+            )).with_children(|button| {
+                buttontext = button.spawn((
+                    TextBundle::from_section(
+                        format!("Inspect"),
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: font_size,
+                            color: font_color,
+                            ..default()
+                        },
+                    ),
+                )).id();
+            }).id();
+        })
+
+        .with_children(|menu| {
+            buttonbundle = menu.spawn((
+                ButtonBundle {
+                    style: Style {
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(20.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        border: UiRect { left: (Val::Px(2.)), right: (Val::Px(2.)), top: (Val::Px(0.)), bottom: (Val::Px(2.))},
+                        ..default()
+                    },
+                    border_color: BG_BORDER_COLOR.into(),
+                    ..default()
+                },
+                Name("show_tile_info".to_string()),
+            )).with_children(|button| {
+                buttontext = button.spawn((
+                    TextBundle::from_section(
+                        format!("Assign Loonka"),
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: font_size,
+                            color: font_color,
+                            ..default()
+                        },
+                    ),
+                )).id();
+            }).id();
+        })
+
+        .with_children(|menu| {
+            buttonbundle = menu.spawn((
+                ButtonBundle {
+                    style: Style {
+                        width: Val::Percent(100.0),
+                        height: Val::Percent(20.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        border: UiRect { left: (Val::Px(2.)), right: (Val::Px(2.)), top: (Val::Px(0.)), bottom: (Val::Px(2.))},
+                        ..default()
+                    },
+                    border_color: BG_BORDER_COLOR.into(),
+                    ..default()
+                },
+                Name("show_tile_info".to_string()),
+            )).with_children(|button| {
+                buttontext = button.spawn((
+                    TextBundle::from_section(
+                        format!("Unassign Loonka"),
+                        TextStyle {
+                            font: font.clone(),
+                            font_size: font_size,
+                            color: font_color,
+                            ..default()
+                        },
+                    ),
+                )).id();
+            }).id();
+        })
+        
+        
+        ;}
 }
     
-
-
 fn reload_on_r( //Reload map textures on 'r' press
     mut commands: Commands,
     asset_server: Res<AssetServer>,

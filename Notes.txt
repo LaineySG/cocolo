@@ -1,0 +1,144 @@
+Fruit trees/orchards - banana, coconut, cherry, apple, peach, plum, apricot, pear, elderberry, goji, lemon, lime, Maple Syrup, orange, pineapple, 
+Nut trees/ Norchards - walnut, chestnut, hazelnut, macademia, pistachio, cocoa, almond, peanut
+Bush fields - strawberry, blueberry, blackberry, grapes, raspberry, Coffee, Marshmallow, rhubarb, 
+Mines - Sugar, jelly crystals, salt, milkgem, maltgem
+Spice fields - Cinammon, ginger, Bear essence, worm essence, peppermint, icemint, seamint, spearmint, gum-gum bush, Rose, licorice root, violet, vanilla
+
+Beeple - Honey, butterbees, molasses bees, biscuit bees (wafer), honeycomb
+Pirate ships + bandit camp - drop random items
+
+water (from anywhere)
+
+
+How the game works:
+-You can click a tile with a resource to collect resources
+-These resources stay on the tile they were collected on (each tile has a count of all resources)
+-Resources can be moved through factories to process them.
+
+-The loonkas have a preferred job (and skills? movespeed, combat, etc), but otherwise can be assigned any job (harvesting, factory-worker, traveller/conductor, trader, warrior, researcher)
+
+-harvesting loonkas will harvest from a given tile (orchards, mines, bush fields, spice fields) - a tile can have any # of harvesters, more harvesters = more harvesting
+-warrior loonkas will steal from the beeple, pirates and bandits
+-traveller loonkas will move goods by foot or by train. foot takes longer and can't hold as much.
+-factory-worker loonkas will run factories
+-trader loonkas will trade and improve sale rate (more coins per goods)
+-Researcher loonkas will use the research budget to invest in discovering new recipes
+-Clowns speed up loonkas within a large block radius
+
+
+-You can hire new loonkas at villages for a constant gold-fee per loonka
+
+-Bar:
+Bar should allow a player to place and delete tracks, place and delete production blocks, Remove all loonkas
+click to place selected
+shift click to delete
+ctrl click to delete all
+
+Context Menu: 
+Add or remove specific Loonkas.
+Trade at a place?
+
+Processors:
+-mixer
+-heater
+-spinner (extractor) 
+-Press
+-cooler
+
+combinations (major)
+caramel - (liquid sugar) => heater
+ice - water => cooler
+Toffee - molasses + sugar + butter => heater => mixer => press
+Roasted nuts - any nut => heater
+Liquid nut milk - any nut + water + sugar => mixer
+Liquid sugar - sugar => heater
+Liquid milk - milkgems + water => heater => mixer
+Licorice extract - licorice => spinner
+Liquid cream - (liquid milk) => heater
+Candied fruit - any fruit => heater
+Cocoa powder - cocoa => spinner
+Marzipan - any sugar + almonds => mixer
+Calisson - (candied fruit) + almonds + sugar + (liquid jelly) => mixer [or something else? combiner?]
+Cotton candy - (sugar) => heater => spinner 
+Sourspice - any citrus => spinner
+fruit extract - any fruit => spinner
+Caramel fruit - any fruit + (caramel) => mixer
+mint extract - any mint => spinner
+nougat - (Roasted nuts) + (Liquid sugar) or honey and (candied fruit) => mixer
+taffy - Butterbee butter + (Liquid sugar) + (fruit extract) => mixer
+Saltwater taffy - Butterbee butter + (Liquid sugar) + (fruit extract) + salt => mixer
+Dark Chocolate - sugar or (liquid sugar) + (cocoa powder) => mixer
+Chocolate - sugar or (liquid sugar) + (cocoa powder) + (liquid milk) => mixer
+White Chocolate - sugar or (liquid sugar) + (cocoa powder) + (liquid cream) => mixer
+Chocolate bar - (any chocolate) => press
+Liquid chocolate - (Chocolate) => heater
+Choco-nuts - (roasted nuts) + (liquid chocolate) => mixer
+Liquid Jelly - Jelly crystals + water => mixer
+Fruit jelly - (liquid jelly) + (fruit extract) + any fruit => mixer
+jelly candies - (liquid jelly) + (fruit extract) => heater
+Coffee hard candy - (Liquid sugar) + Coffee beans + butterbeebutter + salt => mixer => press
+Fruit hard candy - (liquid sugar) + (fruit extract) + water => mixer => heater => press
+Candy canes - (liquid sugar) + (peppermint extract) + water => mixer => heater => press
+Gummy bears - (Jelly candies) + Essence of bear => mixer
+Sour gummy bears - (Gummy bears) + (Sourspice) => mixer
+Gummy worms - (Jelly candies) + Essence of worm => mixer
+Sour gummy worms - (Gummy worms) + (Sourspice) => mixer
+Mint candy - (liquid sugar) + (mint extract) => mixer => press
+Rock candy - (liquid sugar) + (fruit extract) => mixer => press
+Polkagris - (liquid sugar) + (peppermint extract) => mixer => press
+Poz - Sugar + (fruit extract) => mixer => press
+Soft licorice - (licorice extract or fruit extract) + (liquid jelly) => mixer
+hard licorice - (soft licorice) => press
+salted [soft/hard] licorice - (soft/hard licorice) + salt => mixer
+Chewing gum - (mint or fruit extract) + gum-gum + (liquid sugar) => mixer => press
+Turkish delight - (roasted nut)? + (fruit extract) + (dried fruit)? + gum-gum + sugar + (liquid jelly) => mixer
+Ice cream - (liquid cream) + ice + sugar + (any extract) + (any solid ingredient) => mixer => cooler
+nut brittle - (caramel) + any nut => mixer
+Les violettes de Toulouse - liquid sugar + violet => mixer
+Chocolate truffle - (cocoa powder) + (candied coconut) + any roasted nuts + (liquid chocolate) + (liquid cream) => mixer
+Coucougnette - almonds + (marzipan) + (liquid chocolate) + (ginger extract) + (raspberry extract) => mixer
+Marron glacé - (Roasted chestnut) + (liquid sugar) => mixer
+Fondant - (liquid sugar) + water + (liquid jelly) => mixer
+szaloncukor - (fondant) + (liquid chocolate) => mixer
+ferrari richards - (liquid chocolate) + (roasted hazelnut) + butter + (liquid milk) + wafer => mixer
+Jordan Almonds - almonds + (liquid sugar) => mixer
+Raffielli's - (candied coconut) + (liquid cream) + (roasted almonds) + wafer => mixer
+Hopjes - (coffee extract) + caramel + (liquid cream) + butterbee => mixer
+Fudge - (liquid sugar) + butterbee + (liquid milk) => mixer
+Krowki - (fudge) + (toffee) + (liquid milk) => mixer
+Ptasie mleczko - (liquid chocolate) + marshmallow => mixer
+Chocolate water - (liquid chocolate) + wafer
+Pastila - (candied fruit) + honey + (liquid sugar) + (liquid jelly) => mixer
+Damn bar - (roasted almonds) + (caramel) + (liquid chocolate) => mixer
+Toby's own - (liquid chocolate) + nougat + (roasted almonds) + honeybee honey => mixer
+Bentie - (liquid chocolate) + (liquid sugar) + coconut => mixer
+Fruit sally - (raspberry extract) + (pineapple extract) + (liquid jelly) + (liquid sugar) => heater => mixer
+Black jake - (licorice extract) + (liquid jelly) + (liquid sugar) => heater => mixer
+cronchie - (liquid chocolate) + (honeycomb) => mixer
+malt extract - maltgem => spinner
+malt balls - (malt extract) + (liquid chocolate) + (honeycomb) => mixer
+mark's bar - (liquid chocolate) + (nougat) + (caramel) => mixer
+Skittlers - (liquid sugar) + (fruit extracts) => heater => mixer => press
+Maple taffy - (maple syrup) => heater => cooler
+Saladitos - salt + (candied plum) => mixer
+raisins - grapes => heater
+Chocolate raisins - (raisins) + (liquid chocolate) => mixer
+Honey bar - honey + (taffy) + almonds => mixer
+Opera cream - (fondant) + (liquid cream) + (liquid chocolate) => mixer
+Reese's rounds - (peanut) + (chocolate) + (liquid sugar) => mixer
+Peppermint bark - (white chocolate) + (dark chocolate) + (peppermint extract) + (Polkagris) => heater => mixer
+Jelly toby's - (Jelly candy) + sugar => mixer
+Toby's rolls - (caramel) + (liquid sugar) + (cocoa powder) + (liquid cream) => mixer
+Gobstoppers - sugar + (3x fruit extracts) => press
+Sour apache bits - (jelly candies) + (sourspice) => mixer
+Jelly beans - (jelly candies) + honeycomb + (liquid sugar) => heater => mixer
+
+
+
+in future:
+- add pocky flour pretzels etc?
+- liquoeour?
+- aniseed hard candies?
+- marmalade soft candies?
+- Wine / wine gums?
+- lollipops?
